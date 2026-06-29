@@ -1,0 +1,16 @@
+[
+  {
+    "name": "unknown text message hits fallback",
+    "steps": [
+      {
+        "send": { "text": "blahblah" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": { "text": "Sorry, I didn't understand that. Try /help." }
+          }
+        ]
+      }
+    ]
+  }
+]

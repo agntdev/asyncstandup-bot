@@ -116,11 +116,16 @@ export async function tick(
     const elapsedMs = n.getTime() - runCreated.getTime();
     const elapsedMin = Math.floor(elapsedMs / 60_000);
 
-    // --- 2a. Nudge window ---
+    // --- 2a. Nudge window: only nudge members who have been PROMPTED ---
+    // Nudging a member who hasn't received their prompt yet (e.g. they're in a
+    // far-ahead timezone and their prompt hour hasn't arrived) is nonsensical.
     const nudgeWindowMin = Math.min(15, Math.max(5, Math.floor(team.cutoffWindowMinutes / 2)));
     if (elapsedMin >= nudgeWindowMin) {
       const pending = currentRun.responses.filter(
-        (r) => r.status === "pending" && !currentRun.nudgedUserIds.includes(r.userId),
+        (r) =>
+          r.status === "pending" &&
+          currentRun.promptedUserIds.includes(r.userId) &&
+          !currentRun.nudgedUserIds.includes(r.userId),
       );
       if (pending.length > 0) {
         log(`Sending nudges for team "${team.name}" (${pending.length} pending)`);
