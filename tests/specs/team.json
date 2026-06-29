@@ -1,0 +1,13 @@
+[
+  {
+    "name": "Manage Team when user has no team shows create/join options",
+    "steps": [
+      {
+        "send": { "callback": "team:settings" },
+        "expect": [
+          { "method": "editMessageText", "payload": { "text": "You're not in a team yet. Would you like to create one or join an existing team?" } }
+        ]
+      }
+    ]
+  }
+]

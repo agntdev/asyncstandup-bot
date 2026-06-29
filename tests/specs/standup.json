@@ -1,0 +1,35 @@
+[
+  {
+    "name": "Start Standup button when user has no team shows message",
+    "steps": [
+      {
+        "send": { "callback": "standup:init" },
+        "expect": [
+          { "method": "editMessageText", "payload": { "text": "You're not in a team yet. Use Manage Team to set one up first." } }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Skip standup when user has no team",
+    "steps": [
+      {
+        "send": { "callback": "standup:skip" },
+        "expect": [
+          { "method": "sendMessage", "payload": { "text": "You're not in a team yet." } }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Answer standup when user has no team",
+    "steps": [
+      {
+        "send": { "callback": "standup:answer" },
+        "expect": [
+          { "method": "sendMessage", "payload": { "text": "You're not in a team yet." } }
+        ]
+      }
+    ]
+  }
+]
