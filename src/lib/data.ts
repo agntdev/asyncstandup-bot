@@ -33,10 +33,13 @@ export async function getTeam(id: string): Promise<Team | null> {
 
 export async function saveTeam(team: Team): Promise<void> {
   await getStore().set(K.team(team.id), team);
+  // Maintain the teams index
+  await addTeamId(team.id);
 }
 
 export async function deleteTeam(id: string): Promise<void> {
   await getStore().del(K.team(id));
+  await removeTeamId(id);
 }
 
 /** Find a team by the channel id it posts to. Returns the team if found. */
@@ -215,6 +218,30 @@ export async function createTodayRun(teamId: string): Promise<StandupRun> {
 }
 
 // ── Override for testing ─────────────────────────────────────────────────
+
+// ── Teams index — explicit list of all team IDs (no keyspace scan) ────────
+
+export async function addTeamId(teamId: string): Promise<void> {
+  const ids = await getStore().get<string[]>("teams");
+  const list = ids ?? [];
+  if (!list.includes(teamId)) {
+    list.push(teamId);
+    list.sort();
+    await getStore().set("teams", list);
+  }
+}
+
+export async function removeTeamId(teamId: string): Promise<void> {
+  const ids = await getStore().get<string[]>("teams");
+  if (!ids) return;
+  const list = ids.filter((id) => id !== teamId);
+  await getStore().set("teams", list);
+}
+
+export async function getAllTeamIds(): Promise<string[]> {
+  const ids = await getStore().get<string[]>("teams");
+  return ids ?? [];
+}
 
 export function _resetAll(): void {
   // No-op — store reset is handled by setStore in tests

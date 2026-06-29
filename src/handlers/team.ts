@@ -11,6 +11,7 @@ import {
   createMember,
   type Team,
 } from "../lib/types.js";
+import { COMMON_TIMEZONES } from "../lib/timezone.js";
 
 registerMainMenuItem({
   label: "⚙️ Manage Team",
@@ -73,6 +74,7 @@ composer.callbackQuery("team:settings", async (ctx) => {
       [inlineButton("📝 Edit questions", "team:edit:questions")],
       [inlineButton("📅 Edit schedule", "team:edit:schedule")],
       [inlineButton("⏱️ Edit cutoff", "team:edit:cutoff")],
+      [inlineButton("🔑 Edit blocker words", "team:edit:blockers")],
       [inlineButton("👥 Manage members", "team:members")],
       [inlineButton("🔗 Team invite code", "team:invite")],
       BACK_ROW,
@@ -451,6 +453,84 @@ composer.on("message:text", async (ctx, next) => {
   );
 });
 
+// ── Edit blocker keywords ─────────────────────────────────────────────────
+
+composer.callbackQuery("team:edit:blockers", async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const userId = ctx.from!.id;
+  const teamId = await data.getUserTeamId(userId);
+  if (!teamId) return;
+
+  const team = await data.getTeam(teamId);
+  if (!team) return;
+
+  const kwText = team.blockerKeywords.length > 0
+    ? team.blockerKeywords.map((kw) => `▸ ${kw}`).join("\n")
+    : "No keywords set yet.";
+
+  await ctx.editMessageText(
+    `🔑 Current blocker keywords:\n\n${kwText}\n\n` +
+      `To change them, send new keywords separated by commas or one per line. ` +
+      `Type /cancel to abort.`,
+    {
+      reply_markup: inlineKeyboard([
+        [inlineButton("🔙 Cancel", "team:settings")],
+      ]),
+    },
+  );
+
+  ctx.session.teamSetupStep = "edit:awaiting_blockers";
+  ctx.session.teamSetupData = { teamId };
+});
+
+// Handle blocker keywords input
+composer.on("message:text", async (ctx, next) => {
+  if (ctx.session.teamSetupStep !== "edit:awaiting_blockers") return next();
+  if (!ctx.message?.text) return next();
+
+  const teamId = (ctx.session.teamSetupData ?? {})["teamId"] as string;
+  if (!teamId) return next();
+
+  const team = await data.getTeam(teamId);
+  if (!team) {
+    ctx.session.teamSetupStep = undefined;
+    ctx.session.teamSetupData = undefined;
+    await ctx.reply("Team not found.");
+    return;
+  }
+
+  const text = ctx.message.text.trim();
+  const newKeywords = text
+    .split(/[\n,]+/)
+    .map((kw) => kw.trim().toLowerCase())
+    .filter((kw) => kw.length > 1);
+
+  if (newKeywords.length === 0) {
+    await ctx.reply(
+      "Please send at least one keyword. Separate keywords with commas or one per line.",
+      {
+        reply_markup: {
+          force_reply: true,
+          input_field_placeholder: "blocker, stuck, waiting on, dependency",
+        },
+      },
+    );
+    return;
+  }
+
+  team.blockerKeywords = newKeywords;
+  await data.saveTeam(team);
+
+  ctx.session.teamSetupStep = undefined;
+  ctx.session.teamSetupData = undefined;
+
+  await ctx.reply(
+    `✅ Blocker keywords updated! Now tracking ${newKeywords.length} keyword(s):\n\n` +
+      newKeywords.map((kw) => `▸ ${kw}`).join("\n"),
+    { reply_markup: inlineKeyboard([BACK_ROW]) },
+  );
+});
+
 // ── Manage members ───────────────────────────────────────────────────────
 
 composer.callbackQuery("team:members", async (ctx) => {
@@ -475,7 +555,7 @@ composer.callbackQuery("team:members", async (ctx) => {
     const status = m.optInStatus === "active" ? "✅" : m.optInStatus === "paused" ? "⏸️" : "⛔";
     return [
       inlineButton(
-        `${status} Member #${m.id} (${m.optInStatus})`,
+        `${status} Member #${m.id} (${m.optInStatus}, ${m.timeZone})`,
         `team:member:${m.id}`,
       ),
     ];
@@ -484,12 +564,65 @@ composer.callbackQuery("team:members", async (ctx) => {
   memberRows.push(BACK_ROW);
 
   await ctx.editMessageText(
-    `👥 ${team.name} — ${members.length} member(s)\n\nTap a member to toggle their status.`,
+    `👥 ${team.name} — ${members.length} member(s)\n\n` +
+      `Tap a member to toggle status. Tap your own member to set your timezone.`,
     { reply_markup: inlineKeyboard(memberRows) },
   );
 });
 
+// ── Member card: toggle status, set timezone, or remove ──────────────────
+
 composer.callbackQuery(/^team:member:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const memberId = parseInt(ctx.match![1], 10);
+  const userId = ctx.from!.id;
+  const teamId = await data.getUserTeamId(userId);
+  if (!teamId) return;
+
+  const member = await data.getMember(memberId);
+  if (!member || member.teamId !== teamId) {
+    await ctx.editMessageText("That member isn't in your team.");
+    return;
+  }
+
+  // Show member detail with actions
+  const statusEmoji = member.optInStatus === "active" ? "✅" : member.optInStatus === "paused" ? "⏸️" : "⛔";
+  const statusLabel = member.optInStatus === "active" ? "Active — receives prompts" : member.optInStatus === "paused" ? "Paused — no prompts, no nudges" : "Off — excluded from standups";
+
+  const rows: ReturnType<typeof inlineButton>[][] = [
+    [inlineButton(
+      `Toggle status (currently ${member.optInStatus})`,
+      `team:member:toggle:${memberId}`,
+    )],
+  ];
+
+  // Only show timezone + remove for own member or any member (owner controls)
+  if (memberId === userId) {
+    rows.push([
+      inlineButton(`🕐 Set timezone (now: ${member.timeZone})`, `team:member:timezone:${memberId}`),
+    ]);
+  }
+
+  // Any member of the team can remove any other member (team self-management)
+  rows.push([
+    inlineButton(`🗑️ Remove from team`, `team:member:remove:${memberId}`),
+  ]);
+
+  rows.push([inlineButton("⬅️ Back to members", "team:members")]);
+
+  await ctx.editMessageText(
+    `${statusEmoji} Member #${member.id}\n\n` +
+      `Status: ${statusLabel}\n` +
+      `Timezone: ${member.timeZone}\n` +
+      `Joined: ${member.joinedAt.slice(0, 10)}\n\n` +
+      `Choose an action:`,
+    { reply_markup: inlineKeyboard(rows) },
+  );
+});
+
+// ── Toggle member status ─────────────────────────────────────────────────
+
+composer.callbackQuery(/^team:member:toggle:(\d+)$/, async (ctx) => {
   await ctx.answerCallbackQuery();
   const memberId = parseInt(ctx.match![1], 10);
   const userId = ctx.from!.id;
@@ -518,7 +651,7 @@ composer.callbackQuery(/^team:member:(\d+)$/, async (ctx) => {
     const status = m.optInStatus === "active" ? "✅" : m.optInStatus === "paused" ? "⏸️" : "⛔";
     return [
       inlineButton(
-        `${status} Member #${m.id} (${m.optInStatus})`,
+        `${status} Member #${m.id} (${m.optInStatus}, ${m.timeZone})`,
         `team:member:${m.id}`,
       ),
     ];
@@ -526,8 +659,189 @@ composer.callbackQuery(/^team:member:(\d+)$/, async (ctx) => {
   memberRows.push(BACK_ROW);
 
   await ctx.editMessageText(
-    `👥 ${teamId} — ${members.length} member(s)\n\nTap a member to toggle their status.`,
+    `👥 Team — ${members.length} member(s)\n\nTap a member to view details, toggle status, or set timezone.`,
     { reply_markup: inlineKeyboard(memberRows) },
+  );
+});
+
+// ── Remove member ────────────────────────────────────────────────────────
+
+composer.callbackQuery(/^team:member:remove:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const memberId = parseInt(ctx.match![1], 10);
+  const userId = ctx.from!.id;
+  const teamId = await data.getUserTeamId(userId);
+  if (!teamId) return;
+
+  const member = await data.getMember(memberId);
+  if (!member || member.teamId !== teamId) {
+    await ctx.editMessageText("Member not found.");
+    return;
+  }
+
+  await data.deleteMember(memberId);
+
+  // If the member was removed, refresh the list
+  const members = await data.getTeamMembers(teamId);
+  if (members.length === 0) {
+    await ctx.editMessageText(
+      "Member removed. No team members left.",
+      { reply_markup: inlineKeyboard([BACK_ROW]) },
+    );
+    return;
+  }
+
+  const memberRows = members.map((m) => {
+    const status = m.optInStatus === "active" ? "✅" : m.optInStatus === "paused" ? "⏸️" : "⛔";
+    return [
+      inlineButton(
+        `${status} Member #${m.id} (${m.optInStatus}, ${m.timeZone})`,
+        `team:member:${m.id}`,
+      ),
+    ];
+  });
+  memberRows.push(BACK_ROW);
+
+  await ctx.editMessageText(
+    `🗑️ Member #${memberId} removed.\n\nTeam now has ${members.length} member(s).`,
+    { reply_markup: inlineKeyboard(memberRows) },
+  );
+});
+
+// ── Set member timezone ──────────────────────────────────────────────────
+
+composer.callbackQuery(/^team:member:timezone:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const memberId = parseInt(ctx.match![1], 10);
+  const userId = ctx.from!.id;
+  const teamId = await data.getUserTeamId(userId);
+  if (!teamId) return;
+
+  const member = await data.getMember(memberId);
+  if (!member || member.teamId !== teamId) {
+    await ctx.editMessageText("Member not found.");
+    return;
+  }
+
+  const memberTz = member.timeZone || "UTC";
+
+  // Show button grid of common timezones
+  const tzRows = COMMON_TIMEZONES.map((tz) => [
+    inlineButton(
+      `${tz.code === memberTz ? "✅ " : ""}${tz.label}`,
+      `team:member:settzone:${memberId}:${tz.code}`,
+    ),
+  ]);
+
+  // Add a custom text-input option
+  tzRows.push([inlineButton("✏️ Type custom timezone...", `team:member:customtz:${memberId}`)]);
+
+  await ctx.editMessageText(
+    `🕐 Set timezone for Member #${member.id}\n\nCurrent: ${memberTz}\n\nPick one:`,
+    { reply_markup: inlineKeyboard(tzRows) },
+  );
+});
+
+// ── Apply timezone from button ───────────────────────────────────────────
+
+composer.callbackQuery(/^team:member:settzone:(\d+):(.+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const memberId = parseInt(ctx.match![1], 10);
+  const tzCode = ctx.match![2];
+  const userId = ctx.from!.id;
+  const teamId = await data.getUserTeamId(userId);
+  if (!teamId) return;
+
+  const member = await data.getMember(memberId);
+  if (!member || member.teamId !== teamId) {
+    await ctx.editMessageText("Member not found.");
+    return;
+  }
+
+  member.timeZone = tzCode;
+  await data.saveMember(member);
+
+  // Confirm and return to members
+  const tzLabel = COMMON_TIMEZONES.find((t) => t.code === tzCode)?.label ?? tzCode;
+  await ctx.editMessageText(
+    `✅ Timezone set to ${tzLabel} (${tzCode}) for Member #${member.id}.\n\nThey'll now receive standup prompts at the correct local time.`,
+    { reply_markup: inlineKeyboard([
+      [inlineButton("⬅️ Back to members", "team:members")],
+      BACK_ROW,
+    ]) },
+  );
+});
+
+// ── Custom timezone input prompt ─────────────────────────────────────────
+
+composer.callbackQuery(/^team:member:customtz:(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const memberId = parseInt(ctx.match![1], 10);
+
+  ctx.session.teamSetupStep = "member:awaiting_timezone";
+  ctx.session.teamSetupData = { memberId: String(memberId) };
+
+  await ctx.reply(
+    "Enter an IANA timezone code (e.g. Europe/Paris, Asia/Tokyo, America/Chicago):",
+    {
+      reply_markup: {
+        force_reply: true,
+        input_field_placeholder: "e.g. Europe/Paris",
+      },
+    },
+  );
+});
+
+// Handle custom timezone text input
+composer.on("message:text", async (ctx, next) => {
+  if (ctx.session.teamSetupStep !== "member:awaiting_timezone") return next();
+  if (!ctx.message?.text) return next();
+
+  const rawTz = ctx.message.text.trim();
+  const memberId = parseInt((ctx.session.teamSetupData ?? {})["memberId"] as string, 10);
+  const userId = ctx.from!.id;
+
+  // Basic validation: try formatting with the timezone to verify it's valid
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: rawTz }).format();
+  } catch {
+    await ctx.reply(
+      `"${rawTz}" doesn't look like a valid timezone. Try again with a standard IANA code like "Europe/London" or "America/New_York".`,
+      {
+        reply_markup: {
+          force_reply: true,
+          input_field_placeholder: "e.g. America/New_York",
+        },
+      },
+    );
+    return;
+  }
+
+  const teamId = await data.getUserTeamId(userId);
+  if (!teamId) {
+    ctx.session.teamSetupStep = undefined;
+    ctx.session.teamSetupData = undefined;
+    await ctx.reply("Team not found.");
+    return;
+  }
+
+  const member = await data.getMember(memberId);
+  if (!member || member.teamId !== teamId) {
+    ctx.session.teamSetupStep = undefined;
+    ctx.session.teamSetupData = undefined;
+    await ctx.reply("Member not found.");
+    return;
+  }
+
+  member.timeZone = rawTz;
+  await data.saveMember(member);
+
+  ctx.session.teamSetupStep = undefined;
+  ctx.session.teamSetupData = undefined;
+
+  await ctx.reply(
+    `✅ Timezone set to ${rawTz} for Member #${member.id}.`,
+    { reply_markup: inlineKeyboard([BACK_ROW]) },
   );
 });
 
