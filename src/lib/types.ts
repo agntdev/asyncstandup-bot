@@ -52,7 +52,8 @@ export interface StandupRun {
   createdAt: string;
   status: "collecting" | "compiled";
   responses: MemberResponse[];
-  nudgedUserIds: number[];
+  promptedUserIds: number[]; // members who have received their prompt this run
+  nudgedUserIds: number[]; // members who have received a nudge this run
   digestContent?: string;
   blockerSummary?: string;
 }
@@ -125,6 +126,7 @@ export function createStandupRun(
     createdAt: now().toISOString(),
     status: "collecting",
     responses,
+    promptedUserIds: [],
     nudgedUserIds: [],
   };
 }

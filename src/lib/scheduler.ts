@@ -161,6 +161,9 @@ async function deliverTimezoneAwarePrompts(
     const resp = run.responses.find((r) => r.userId === member.id);
     if (!resp || resp.status !== "pending") continue;
 
+    // Skip if this member was already prompted this run (prevents dupes on every tick)
+    if (run.promptedUserIds.includes(member.id)) continue;
+
     // Check if this member's local time has reached the scheduled hour
     const tz = member.timeZone || "UTC";
     if (!isPastLocalTime(team.localTime, tz)) continue;

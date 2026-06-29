@@ -157,9 +157,11 @@ composer.callbackQuery(/^history:detail:(.+)$/, async (ctx) => {
   // Truncate if too long for one message
   const truncated = text.length > 4000 ? text.slice(0, 3997) + "..." : text;
 
+  const backDays = ctx.session.historyDays ?? 90;
+
   await ctx.editMessageText(truncated, {
     reply_markup: inlineKeyboard([
-      [inlineButton("⬅️ Back to list", "history:period:90")],
+      [inlineButton("⬅️ Back to list", `history:period:${backDays}`)],
       BACK_ROW,
     ]),
   });

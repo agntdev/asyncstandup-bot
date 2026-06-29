@@ -295,6 +295,11 @@ export async function promptMember(
     await api.sendMessage(member.id, buildPromptMessage(team), {
       reply_markup: promptKeyboard(),
     });
+    // Mark as prompted so the scheduler doesn't re-prompt on the next tick
+    if (!run.promptedUserIds.includes(member.id)) {
+      run.promptedUserIds.push(member.id);
+    }
+    await data.saveRun(run);
     return true;
   } catch (err) {
     const e = err as { error_code?: number };
