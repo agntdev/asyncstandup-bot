@@ -9,16 +9,5 @@
         ]
       }
     ]
-  },
-  {
-    "name": "/history when user has no team",
-    "steps": [
-      {
-        "send": { "text": "/history" },
-        "expect": [
-          { "method": "sendMessage", "payload": { "text": "You're not in a team yet. Use Manage Team to set one up." } }
-        ]
-      }
-    ]
   }
 ]

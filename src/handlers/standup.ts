@@ -169,7 +169,18 @@ composer.on("message:text", async (ctx, next) => {
         await standup.compileAndPostDigest(ctx.api, team);
       }
     } else {
-      // No active run — still save the response for when a run starts
+      // No active run for today — create one now so these answers are saved.
+      // This can happen when a member starts answering right at midnight or
+      // when a manual standup was never triggered.
+      const newRun = await data.createTodayRun(teamId);
+      const resp = newRun.responses.find((r) => r.userId === userId);
+      if (resp) {
+        resp.status = "answered";
+        resp.answers = { ...responses };
+        resp.flagsBlockers = blockerDetected;
+        resp.respondedAt = now().toISOString();
+      }
+      await data.saveRun(newRun);
     }
 
     ctx.session.step = undefined;

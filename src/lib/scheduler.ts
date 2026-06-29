@@ -116,10 +116,11 @@ export async function tick(
     }
 
     // --- 2b. Cutoff enforcement ---
-    // Compute cutoff as: the latest member's prompt delivery time + window.
-    // This ensures members behind UTC aren't cut off before their prompt.
+    // Compute cutoff as: the latest member's prompt delivery time + window,
+    // anchored to the RUN'S CREATION DATE (not the tick time). This ensures
+    // the cutoff never shifts to a later calendar day after a restart.
     const cutoffDeadline = await computeCutoffDeadline(
-      team, await data.getActiveMembers(team.id),
+      team, await data.getActiveMembers(team.id), currentRun.date,
     );
     if (n >= cutoffDeadline) {
       const pendingCount = currentRun.responses.filter(
@@ -178,16 +179,23 @@ async function deliverTimezoneAwarePrompts(
  * the team's cutoff window. For members ahead of UTC (e.g. UTC+12), this
  * pushes the cutoff to avoid them being cut off before their local 09:00.
  *
+ * Anchored to the RUN'S CREATION DATE, not the current tick time, so the
+ * cutoff for a run created on day D never moves to day D+1 after a restart.
+ *
  * Falls back to run creation time + cutoff if there are no members.
  */
 async function computeCutoffDeadline(
   team: Team,
   members: Member[],
+  runDate: string, // "YYYY-MM-DD" the run was created for
 ): Promise<Date> {
   if (members.length === 0) {
-    const n = now();
-    return new Date(n.getTime() + team.cutoffWindowMinutes * 60_000);
+    const runDateObj = new Date(runDate + "T00:00:00Z");
+    return new Date(runDateObj.getTime() + team.cutoffWindowMinutes * 60_000);
   }
+
+  // Parse the run's date once — all member prompt times anchor to this date.
+  const [runY, runM, runD] = runDate.split("-").map(Number);
 
   // Find the latest member's local prompt time (in UTC)
   let latestPromptUtc = new Date(0);
@@ -198,11 +206,8 @@ async function computeCutoffDeadline(
     // UTC = local time minus the offset
     const utcFromLocal = (localH * 60 + localM) - offsetMin;
 
-    const n = now();
     const promptUtc = new Date(Date.UTC(
-      n.getUTCFullYear(),
-      n.getUTCMonth(),
-      n.getUTCDate(),
+      runY, runM - 1, runD, // months are 0-indexed in JS
       ...timeToHms(utcFromLocal),
     ));
     if (promptUtc > latestPromptUtc) latestPromptUtc = promptUtc;
