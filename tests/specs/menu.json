@@ -1,0 +1,16 @@
+[
+  {
+    "name": "menu:main callback returns to welcome with main menu",
+    "steps": [
+      {
+        "send": { "callback": "menu:main" },
+        "expect": [
+          {
+            "method": "editMessageText",
+            "payload": { "text": "👋 Hey! I'm your team's async standup bot. Tap a button to get started." }
+          }
+        ]
+      }
+    ]
+  }
+]

@@ -1,0 +1,16 @@
+[
+  {
+    "name": "/cancel clears flows and offers back to menu",
+    "steps": [
+      {
+        "send": { "text": "/cancel" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": { "text": "Cancelled. Tap /start to begin again, or use the menu below." }
+          }
+        ]
+      }
+    ]
+  }
+]
