@@ -65,7 +65,8 @@ composer.callbackQuery(/^history:period:(\d+)$/, async (ctx) => {
 
   const toDate = todayDate();
   const d = new Date(toDate + "T00:00:00Z");
-  d.setUTCDate(d.getUTCDate() - days);
+  // "Last N days": include today plus N-1 prior days = exactly N calendar days.
+  d.setUTCDate(d.getUTCDate() - (days - 1));
   const fromDate = d.toISOString().slice(0, 10);
 
   const entries = await data.getHistoryInRange(teamId, fromDate, toDate);
@@ -111,7 +112,8 @@ composer.callbackQuery(/^history:pg:(prev|next):(\d+)$/, async (ctx) => {
 
   const toDate = todayDate();
   const d = new Date(toDate + "T00:00:00Z");
-  d.setUTCDate(d.getUTCDate() - days);
+  // "Last N days": include today plus N-1 prior days = exactly N calendar days.
+  d.setUTCDate(d.getUTCDate() - (days - 1));
   const fromDate = d.toISOString().slice(0, 10);
   const entries = await data.getHistoryInRange(teamId, fromDate, toDate);
 
@@ -179,7 +181,7 @@ composer.callbackQuery("history:blockers", async (ctx) => {
 
   const toDate = todayDate();
   const d = new Date(toDate + "T00:00:00Z");
-  d.setUTCDate(d.getUTCDate() - 90);
+  d.setUTCDate(d.getUTCDate() - 89);
   const fromDate = d.toISOString().slice(0, 10);
 
   const entries = await data.getHistoryInRange(teamId, fromDate, toDate);
