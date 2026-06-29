@@ -181,6 +181,16 @@ composer.on("message:text", async (ctx, next) => {
         resp.respondedAt = now().toISOString();
       }
       await data.saveRun(newRun);
+
+      // If all active members have now responded, compile the digest
+      // immediately (matching the "or when all respond" contract from the
+      // blueprint), even though this run was just created.
+      const allDone = newRun.responses.every(
+        (r) => r.status !== "pending",
+      );
+      if (allDone) {
+        await standup.compileAndPostDigest(ctx.api, team);
+      }
     }
 
     ctx.session.step = undefined;
@@ -201,6 +211,24 @@ composer.on("message:text", async (ctx, next) => {
       reply_markup: { force_reply: true, input_field_placeholder: "Type your answer..." },
     });
   }
+});
+
+// ── Handle non-text messages during answer flow ──────────────────────────
+// If a user sends a photo, sticker, voice note, etc. while answering, don't
+// let them fall through to the global "Sorry, I didn't understand" fallback —
+// instead, guide them back to typing their answer.
+
+composer.on("message", async (ctx, next) => {
+  if (ctx.session.step !== "standup:answering") return next();
+  // Text messages are handled by the message:text handler above.
+  if (ctx.message?.text) return next();
+
+  await ctx.reply(
+    "I'm waiting for your text answer. Tap /cancel if you want to stop, or type your response below.",
+    {
+      reply_markup: { force_reply: true, input_field_placeholder: "Type your answer..." },
+    },
+  );
 });
 
 export default composer;

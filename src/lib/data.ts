@@ -75,12 +75,27 @@ export async function saveMember(member: Member): Promise<void> {
 export async function deleteMember(userId: number): Promise<void> {
   const member = await getMember(userId);
   if (member) {
+    const teamId = member.teamId;
+
     // Remove from team's memberIds index
-    const team = await getTeam(member.teamId);
+    const team = await getTeam(teamId);
     if (team) {
       team.memberIds = team.memberIds.filter((id) => id !== userId);
       await saveTeam(team);
     }
+
+    // Clean up today's active StandupRun so the removed member's pending
+    // response doesn't block early digest compilation (prevents the allDone
+    // check from failing because a ghost response stays "pending" forever).
+    const date = now().toISOString().slice(0, 10);
+    const run = await getRun(teamId, date);
+    if (run && run.status === "collecting") {
+      // Remove the response entry entirely — if the member is gone, their
+      // response no longer matters for the "all responded" condition.
+      run.responses = run.responses.filter((r) => r.userId !== userId);
+      await saveRun(run);
+    }
+
     // Clear reverse index
     await getStore().del(`userteam:${userId}`);
   }

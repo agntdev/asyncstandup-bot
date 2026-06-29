@@ -36,16 +36,34 @@ export function startScheduler(
   const interval = opts.pollIntervalMs ?? 30_000;
   const log: Logger = opts.log ?? (() => {});
 
-  const timer = setInterval(async () => {
-    try {
-      await tick(api, log);
-    } catch (err) {
-      log(`Scheduler tick error: ${err}`);
-    }
-  }, interval);
+  // Guard: use recursive setTimeout so concurrent ticks can never overlap.
+  // setInterval would fire the next tick even if the previous one hasn't
+  // finished, which can cause double prompts/nudges and inconsistent state.
+  let running = false;
+  let cancelled = false;
+
+  function scheduleNext() {
+    if (cancelled) return;
+    setTimeout(async () => {
+      if (running) return; // safety belt — should never happen with the guard
+      running = true;
+      try {
+        await tick(api, log);
+      } catch (err) {
+        log(`Scheduler tick error: ${err}`);
+      } finally {
+        running = false;
+        if (!cancelled) scheduleNext();
+      }
+    }, interval);
+  }
+
+  scheduleNext();
 
   log(`Scheduler started (poll every ${interval}ms)`);
-  return () => clearInterval(timer);
+  return () => {
+    cancelled = true;
+  };
 }
 
 /**
@@ -199,15 +217,25 @@ async function computeCutoffDeadline(
 
   // Parse the run's date once — all member prompt times anchor to this date.
   const [runY, runM, runD] = runDate.split("-").map(Number);
+  const [localH, localMin] = team.localTime.split(":").map(Number);
+
+  // Construct a Date at the team's scheduled local time ON THE RUN'S DATE.
+  // We don't know the UTC instant yet (that depends on the timezone), but we
+  // use midnight UTC of the run date as the base and let getUtcOffsetMinutes
+  // compute the real offset for that date. We construct a Date at noon UTC
+  // on the run date as a safe representative instant — any DST transition for
+  // that date will be reflected, and noon avoids midnight edge cases.
+  const runDateAtNoon = new Date(Date.UTC(runY, runM - 1, runD, 12, 0, 0));
 
   // Find the latest member's local prompt time (in UTC)
   let latestPromptUtc = new Date(0);
   for (const member of members) {
-    const offsetMin = getUtcOffsetMinutes(member.timeZone || "UTC");
-    const localH = parseInt(team.localTime.split(":")[0], 10);
-    const localM = parseInt(team.localTime.split(":")[1], 10) || 0;
-    // UTC = local time minus the offset
-    const utcFromLocal = (localH * 60 + localM) - offsetMin;
+    // Compute the offset for the RUN'S DATE (at noon UTC), NOT at now().
+    // This is correct during DST transitions: the offset matches the calendar
+    // date the standup is scheduled for, regardless of when the scheduler tick
+    // actually fires.
+    const offsetMin = getUtcOffsetMinutes(member.timeZone || "UTC", runDateAtNoon);
+    const utcFromLocal = (localH * 60 + localMin) - offsetMin;
 
     const promptUtc = new Date(Date.UTC(
       runY, runM - 1, runD, // months are 0-indexed in JS

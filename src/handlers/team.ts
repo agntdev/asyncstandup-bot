@@ -6,6 +6,7 @@ import {
   registerMainMenuItem,
 } from "../toolkit/index.js";
 import * as data from "../lib/data.js";
+import { todayDate, compileAndPostDigest } from "../lib/standup.js";
 import {
   createTeam,
   createMember,
@@ -743,6 +744,22 @@ composer.callbackQuery(/^team:member:remove:(\d+)$/, async (ctx) => {
   }
 
   await data.deleteMember(memberId);
+
+  // After removing a member, check if today's standup run is now unblocked
+  // (the removed member's pending response was cleaned up by deleteMember).
+  const date = todayDate();
+  const run = await data.getRun(teamId, date);
+  if (run && run.status === "collecting") {
+    const allDone = run.responses.every((r) => r.status !== "pending");
+    const team = await data.getTeam(teamId);
+    if (allDone && run.responses.length > 0 && team) {
+      try {
+        await compileAndPostDigest(ctx.api, team);
+      } catch (err) {
+        console.error("Failed to compile digest after member removal:", err);
+      }
+    }
+  }
 
   // If the member was removed, refresh the list
   const members = await data.getTeamMembers(teamId);
