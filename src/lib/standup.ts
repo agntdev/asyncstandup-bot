@@ -258,6 +258,44 @@ export async function compileAndPostDigest(
   return digestText;
 }
 
+// ── Prompt a single member ───────────────────────────────────────────────
+
+/**
+ * Send a standup prompt to ONE member. Handles 403 (user never started bot /
+ * blocked) gracefully by marking the response as "off". Creates the daily run
+ * on first call.
+ *
+ * Returns true if the prompt was sent successfully.
+ */
+export async function promptMember(
+  api: Api<RawApi>,
+  team: Team,
+  member: Member,
+): Promise<boolean> {
+  const date = todayDate();
+  let run = await data.getRun(team.id, date);
+  if (!run) {
+    run = await data.createTodayRun(team.id);
+  }
+
+  try {
+    await api.sendMessage(member.id, buildPromptMessage(team), {
+      reply_markup: promptKeyboard(),
+    });
+    return true;
+  } catch (err) {
+    const e = err as { error_code?: number };
+    if (e.error_code === 403) {
+      const resp = run.responses.find((r) => r.userId === member.id);
+      if (resp) resp.status = "off";
+      await data.saveRun(run);
+    } else {
+      console.error(`Failed to prompt user ${member.id}:`, err);
+    }
+    return false;
+  }
+}
+
 // ── Manual standup trigger (admin/test) ──────────────────────────────────
 
 export async function triggerStandup(
@@ -269,20 +307,8 @@ export async function triggerStandup(
 
   let sent = 0;
   for (const member of activeMembers) {
-    try {
-      await api.sendMessage(member.id, buildPromptMessage(team), {
-        reply_markup: promptKeyboard(),
-      });
-      sent++;
-    } catch (err) {
-      const e = err as { error_code?: number };
-      if (e.error_code === 403) {
-        const resp = run.responses.find((r) => r.userId === member.id);
-        if (resp) resp.status = "off";
-      } else {
-        console.error(`Failed to prompt user ${member.id}:`, err);
-      }
-    }
+    const ok = await promptMember(api, team, member);
+    if (ok) sent++;
   }
 
   await data.saveRun(run);

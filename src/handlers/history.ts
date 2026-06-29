@@ -19,6 +19,35 @@ const BACK_ROW = [inlineButton("⬅️ Back to menu", "menu:main")];
 
 const composer = new Composer<Ctx>();
 
+// ── /history command (blueprint-defined entry point) ──────────────────────
+
+composer.command("history", async (ctx) => {
+  const userId = ctx.from!.id;
+  const teamId = await data.getUserTeamId(userId);
+
+  if (!teamId) {
+    await ctx.reply(
+      "You're not in a team yet. Use Manage Team to set one up."
+    );
+    return;
+  }
+
+  ctx.session.historyTeamId = teamId;
+
+  await ctx.reply(
+    "📋 How far back would you like to go?",
+    {
+      reply_markup: inlineKeyboard([
+        [inlineButton("Last 7 days", "history:period:7")],
+        [inlineButton("Last 30 days", "history:period:30")],
+        [inlineButton("Last 90 days", "history:period:90")],
+        [inlineButton("⚠️ Recurring blockers", "history:blockers")],
+        BACK_ROW,
+      ]),
+    },
+  );
+});
+
 // ── Show history period picker ───────────────────────────────────────────-
 
 composer.callbackQuery("history:show", async (ctx) => {
@@ -60,6 +89,9 @@ composer.callbackQuery(/^history:period:(\d+)$/, async (ctx) => {
   }
 
   const days = parseInt(ctx.match![1], 10);
+  // Persist the period so pagination uses the correct range
+  ctx.session.historyDays = days;
+
   const toDate = todayDate();
   const d = new Date(toDate + "T00:00:00Z");
   d.setUTCDate(d.getUTCDate() - days);
@@ -93,9 +125,6 @@ composer.callbackQuery(/^history:period:(\d+)$/, async (ctx) => {
     `📋 Standups — last ${days} days (${entries.length} total)`,
     { reply_markup: keyboard },
   );
-
-  // Store pagination context
-  ctx.session.historyTeamId = teamId;
 });
 
 // ── History pagination ────────────────────────────────────────────────────
@@ -106,10 +135,12 @@ composer.callbackQuery(/^history:pg:(prev|next):(\d+)$/, async (ctx) => {
   if (!teamId) return;
 
   const newPage = parseInt(ctx.match![2], 10);
-  // Rebuild - need to re-fetch since pagination context is ephemeral
+  // Use the persisted period from the original selection (default 90 for back-navigation)
+  const days = ctx.session.historyDays ?? 90;
+
   const toDate = todayDate();
   const d = new Date(toDate + "T00:00:00Z");
-  d.setUTCDate(d.getUTCDate() - 90);
+  d.setUTCDate(d.getUTCDate() - days);
   const fromDate = d.toISOString().slice(0, 10);
   const entries = await data.getHistoryInRange(teamId, fromDate, toDate);
 
@@ -126,7 +157,7 @@ composer.callbackQuery(/^history:pg:(prev|next):(\d+)$/, async (ctx) => {
   const keyboard = inlineKeyboard([...rows, ...controls.inline_keyboard, BACK_ROW]);
 
   await ctx.editMessageText(
-    `📋 Standups — last 90 days (${entries.length} total)\nPage ${newPage + 1} of ${totalPages}`,
+    `📋 Standups — last ${days} days (${entries.length} total)\nPage ${newPage + 1} of ${totalPages}`,
     { reply_markup: keyboard },
   );
 });

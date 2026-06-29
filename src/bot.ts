@@ -16,6 +16,7 @@ export interface Session {
   teamSetupData?: Record<string, unknown>;
   // History flow
   historyTeamId?: string;
+  historyDays?: number;
 }
 
 export type Ctx = BotContext<Session>;
