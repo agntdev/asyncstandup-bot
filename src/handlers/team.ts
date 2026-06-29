@@ -73,6 +73,7 @@ composer.callbackQuery("team:settings", async (ctx) => {
     reply_markup: inlineKeyboard([
       [inlineButton("📝 Edit questions", "team:edit:questions")],
       [inlineButton("📅 Edit schedule", "team:edit:schedule")],
+      [inlineButton("🕐 Edit local time", "team:edit:localtime")],
       [inlineButton("⏱️ Edit cutoff", "team:edit:cutoff")],
       [inlineButton("🔑 Edit blocker words", "team:edit:blockers")],
       [inlineButton("👥 Manage members", "team:members")],
@@ -391,6 +392,68 @@ composer.callbackQuery("team:schedule:done", async (ctx) => {
         [inlineButton("⚙️ Back to settings", "team:settings")],
       ]),
     },
+  );
+});
+
+// ── Edit local time ──────────────────────────────────────────────────────
+
+composer.callbackQuery("team:edit:localtime", async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const userId = ctx.from!.id;
+  const teamId = await data.getUserTeamId(userId);
+  if (!teamId) return;
+
+  ctx.session.teamSetupStep = "edit:awaiting_localtime";
+  ctx.session.teamSetupData = { teamId };
+
+  await ctx.reply(
+    "What time should standup prompts go out each day?\n\n" +
+      "Send the time in 24-hour format (e.g. 09:00, 14:30):",
+    {
+      reply_markup: {
+        force_reply: true,
+        input_field_placeholder: "e.g. 09:00",
+      },
+    },
+  );
+});
+
+// Handle local time input
+composer.on("message:text", async (ctx, next) => {
+  if (ctx.session.teamSetupStep !== "edit:awaiting_localtime") return next();
+  if (!ctx.message?.text) return next();
+
+  const teamId = (ctx.session.teamSetupData ?? {})["teamId"] as string;
+  if (!teamId) return next();
+
+  const raw = ctx.message.text.trim();
+  const match = raw.match(/^([01]\d|2[0-3]):([0-5]\d)$/);
+  if (!match) {
+    await ctx.reply(
+      "That doesn't look like a valid 24-hour time. Use HH:MM format (e.g. 09:00, 14:30).",
+      {
+        reply_markup: {
+          force_reply: true,
+          input_field_placeholder: "e.g. 09:00",
+        },
+      },
+    );
+    return;
+  }
+
+  const localTime = match[0];
+  const team = await data.getTeam(teamId);
+  if (team) {
+    team.localTime = localTime;
+    await data.saveTeam(team);
+  }
+
+  ctx.session.teamSetupStep = undefined;
+  ctx.session.teamSetupData = undefined;
+
+  await ctx.reply(
+    `✅ Standup prompt time set to ${localTime} local time.`,
+    { reply_markup: inlineKeyboard([BACK_ROW]) },
   );
 });
 
