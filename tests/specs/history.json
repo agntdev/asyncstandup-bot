@@ -1,0 +1,13 @@
+[
+  {
+    "name": "View History when user has no team",
+    "steps": [
+      {
+        "send": { "callback": "history:show" },
+        "expect": [
+          { "method": "editMessageText", "payload": { "text": "You're not in a team yet. Use Manage Team to set one up." } }
+        ]
+      }
+    ]
+  }
+]
