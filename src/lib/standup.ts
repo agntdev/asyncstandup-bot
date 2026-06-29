@@ -101,15 +101,20 @@ export function compileDigest(
   const answered = run.responses.filter((r) => r.status === "answered");
   const skipped = run.responses.filter((r) => r.status === "skipped");
   const pending = run.responses.filter((r) => r.status === "pending");
+  const off = run.responses.filter((r) => r.status === "off");
 
   const lines: string[] = [];
   lines.push(`📊 Standup Digest — ${formatDate(run.date)}`);
   lines.push(`\nTeam: ${team.name}`);
 
-  const total = run.responses.length;
+  const totalActive = answered.length + skipped.length + pending.length;
   lines.push(
-    `\n${answered.length}/${total} responded · ${skipped.length} skipped · ${pending.length} pending`,
+    `\n${answered.length}/${totalActive} responded · ${skipped.length} skipped · ${pending.length} pending`,
   );
+
+  if (off.length > 0) {
+    lines[lines.length - 1] += ` · ${off.length} unavailable`;
+  }
 
   if (answered.length > 0) {
     lines.push("\n─── Responses ───");
@@ -143,6 +148,14 @@ export function compileDigest(
     for (const r of pending) {
       const m = memberMap.get(r.userId);
       lines.push(`▸ ${m ? `Member #${m.id}` : `User ${r.userId}`}`);
+    }
+  }
+
+  if (off.length > 0) {
+    lines.push("\n─── Unavailable ───");
+    for (const r of off) {
+      const m = memberMap.get(r.userId);
+      lines.push(`▸ ${m ? `Member #${m.id}` : `User ${r.userId}`} (couldn't reach — blocked or never started)`);
     }
   }
 
