@@ -61,6 +61,19 @@ export function isPastLocalTime(targetLocal: string, tz: string, at?: Date): boo
   return currentMin >= targetMin;
 }
 
+/**
+ * Get the local day-of-week (Sun=0 … Sat=6) in the given timezone at the given
+ * instant (defaults to now). Used by the scheduler to check if today is a
+ * scheduled standup day for each member individually.
+ */
+export function getLocalDay(tz: string, at?: Date): number {
+  const offsetMin = getUtcOffsetMinutes(tz, at);
+  const n = at ?? now();
+  const localMs = n.getTime() + offsetMin * 60_000;
+  const localDate = new Date(localMs);
+  return localDate.getUTCDay();
+}
+
 /** Commonly-used timezones for member selection UI. */
 export const COMMON_TIMEZONES: { code: string; label: string }[] = [
   { code: "UTC", label: "UTC (Universal)" },
