@@ -303,13 +303,28 @@ export async function promptMember(
     return true;
   } catch (err) {
     const e = err as { error_code?: number };
-    if (e.error_code === 403) {
+    // Permanent delivery failures (400 = chat not found / user deleted account,
+    // 403 = blocked / bot kicked) — mark the member as "off" so they don't
+    // remain "pending" forever, which would block the allDone check and prevent
+    // early digest compilation for every other team member.
+    if (e.error_code === 400 || e.error_code === 403) {
       const resp = run.responses.find((r) => r.userId === member.id);
       if (resp) resp.status = "off";
-      await data.saveRun(run);
+      // Also add to promptedUserIds so the scheduler doesn't keep retrying
+      // a member who can never receive messages.
+      if (!run.promptedUserIds.includes(member.id)) {
+        run.promptedUserIds.push(member.id);
+      }
     } else {
-      console.error(`Failed to prompt user ${member.id}:`, err);
+      // Transient error (429 rate limit, 500 server error) — log it. Don't
+      // mark as prompted so the scheduler retries on the next tick.
+      console.error(`Failed to prompt user ${member.id} (error ${e.error_code}):`, err);
     }
+    // MEDIUM FIX: always save the run so promptedUserIds and any status changes
+    // from earlier promptMember calls in the same tick are persisted. Without
+    // this, the run state is stale after a transient error and accumulated
+    // prompt state from earlier members in the same batch is lost.
+    await data.saveRun(run);
     return false;
   }
 }
