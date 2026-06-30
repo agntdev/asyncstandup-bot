@@ -1,0 +1,48 @@
+[
+  {
+    "name": "Deep-link join works with valid team code",
+    "steps": [
+      {
+        "send": { "callback": "team:create" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "✨ Let's set up your team!\n\nFirst, what's your team called?"
+            }
+          }
+        ]
+      },
+      {
+        "send": { "text": "ExistingTeam" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "Got it! Now let's set up your channel for digests.\n\n**Forward any message from your team's channel** to me — I'll grab the channel ID from it. That's the easiest way."
+            }
+          }
+        ]
+      },
+      {
+        "send": { "text": "-1007777777770" },
+        "expect": [
+          {
+            "method": "sendMessage"
+          }
+        ]
+      },
+      {
+        "send": { "text": "/start existingteam" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "You're already in \"ExistingTeam\"! Tap below to get started."
+            }
+          }
+        ]
+      }
+    ]
+  }
+]

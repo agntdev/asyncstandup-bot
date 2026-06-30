@@ -245,6 +245,27 @@ composer.callbackQuery("team:channel:confirm", async (ctx) => {
 composer.callbackQuery("team:channel:manual", async (ctx) => {
   await ctx.answerCallbackQuery();
   const userId = ctx.from!.id;
+
+  // Case 1: manual channel entry during TEAM CREATION — no team exists yet.
+  // We just need to capture the channel ID and create the team with it.
+  if (ctx.session.teamSetupStep === "create:awaiting_channel") {
+    ctx.session.teamSetupStep = "create:awaiting_channel_manual";
+    ctx.session.channelShareTeamId = undefined;
+    await ctx.reply(
+      "Enter the Telegram channel ID where digests should be posted.\n\n" +
+        "It's a negative number like `-1001234567890`. " +
+        "You can find it by forwarding a message from the channel to @RawDataBot.",
+      {
+        reply_markup: {
+          force_reply: true,
+          input_field_placeholder: "e.g. -1001234567890",
+        },
+      },
+    );
+    return;
+  }
+
+  // Case 2: existing team — store the teamId for the text handler to use.
   const teamId = ctx.session.channelShareTeamId || await data.getUserTeamId(userId);
   if (!teamId) {
     await ctx.reply(
@@ -441,12 +462,15 @@ composer.callbackQuery("team:create:cancel", async (ctx) => {
   }
 });
 
-// ── Text handler for create:awaiting_channel (manual ID entry during create) ──
+// ── Text handlers for create:awaiting_channel and create:awaiting_channel_manual ──
+// Both handle manual channel ID entry during team creation (the user taps
+// "Enter channel ID manually" instead of forwarding a message).
 
-composer.on("message:text", async (ctx, next) => {
-  if (ctx.session.teamSetupStep !== "create:awaiting_channel") return next();
-  if (!ctx.message?.text) return next();
-
+async function handleCreateChannelManual(
+  ctx: Ctx,
+  name: string,
+): Promise<void> {
+  if (!ctx.message?.text) return;
   const channelId = parseInt(ctx.message.text.trim(), 10);
   if (isNaN(channelId)) {
     await ctx.reply(
@@ -455,7 +479,6 @@ composer.on("message:text", async (ctx, next) => {
     return;
   }
 
-  const name = (ctx.session.teamSetupData ?? {})["name"] as string;
   const teamId = name.toLowerCase().replace(/[^a-z0-9]/g, "-").slice(0, 32);
 
   const team = createTeam({
@@ -485,6 +508,15 @@ composer.on("message:text", async (ctx, next) => {
       `Your invite link: t.me/${ctx.me.username}?start=${teamId}`,
     { reply_markup: inlineKeyboard([BACK_ROW]) },
   );
+}
+
+composer.on("message:text", async (ctx, next) => {
+  const step = ctx.session.teamSetupStep;
+  if (step !== "create:awaiting_channel" && step !== "create:awaiting_channel_manual") return next();
+  if (!ctx.message?.text) return next();
+
+  const name = (ctx.session.teamSetupData ?? {})["name"] as string;
+  await handleCreateChannelManual(ctx, name);
 });
 
 // ── Join team with code ──────────────────────────────────────────────────

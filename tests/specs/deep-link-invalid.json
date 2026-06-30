@@ -1,0 +1,18 @@
+[
+  {
+    "name": "Deep-link with invalid team code shows error",
+    "steps": [
+      {
+        "send": { "text": "/start fake-team" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "🔗 Couldn't find team \"fake-team\". Ask your admin for the right code, or create a new team from the Manage Team menu."
+            }
+          }
+        ]
+      }
+    ]
+  }
+]

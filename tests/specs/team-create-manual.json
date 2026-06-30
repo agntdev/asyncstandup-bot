@@ -1,0 +1,69 @@
+[
+  {
+    "name": "Create team with manual channel ID entry",
+    "steps": [
+      {
+        "send": { "text": "/start" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": { "text": "👋 Hey! I'm your team's async standup bot. Tap a button to get started." }
+          }
+        ]
+      },
+      {
+        "send": { "callback": "team:settings" },
+        "expect": [
+          {
+            "method": "editMessageText",
+            "payload": { "text": "You're not in a team yet. Would you like to create one or join an existing team?" }
+          }
+        ]
+      },
+      {
+        "send": { "callback": "team:create" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "✨ Let's set up your team!\n\nFirst, what's your team called?"
+            }
+          }
+        ]
+      },
+      {
+        "send": { "text": "Engineering" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "Got it! Now let's set up your channel for digests.\n\n**Forward any message from your team's channel** to me — I'll grab the channel ID from it. That's the easiest way."
+            }
+          }
+        ]
+      },
+      {
+        "send": { "callback": "team:channel:manual" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "Enter the Telegram channel ID where digests should be posted.\n\nIt's a negative number like `-1001234567890`. You can find it by forwarding a message from the channel to @RawDataBot."
+            }
+          }
+        ]
+      },
+      {
+        "send": { "text": "-1009876543210" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "✅ Team \"Engineering\" is all set!\n\nYour team code is: `engineering`\nShare this with teammates — they can join by tapping the Manage Team menu and entering the code.\n\nYour invite link: t.me/test_bot?start=engineering"
+            }
+          }
+        ]
+      }
+    ]
+  }
+]

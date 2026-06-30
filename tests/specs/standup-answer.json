@@ -1,0 +1,62 @@
+[
+  {
+    "name": "Standup answer flow — answer button starts flow",
+    "steps": [
+      {
+        "send": { "callback": "team:create" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "✨ Let's set up your team!\n\nFirst, what's your team called?"
+            }
+          }
+        ]
+      },
+      {
+        "send": { "text": "MyTeam" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "Got it! Now let's set up your channel for digests.\n\n**Forward any message from your team's channel** to me — I'll grab the channel ID from it. That's the easiest way."
+            }
+          }
+        ]
+      },
+      {
+        "send": { "text": "-1001112223330" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "✅ Team \"MyTeam\" is all set!\n\nYour team code is: `myteam`\nShare this with teammates — they can join by tapping the Manage Team menu and entering the code.\n\nYour invite link: t.me/test_bot?start=myteam"
+            }
+          }
+        ]
+      },
+      {
+        "send": { "callback": "standup:answer" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "📋 Question 1 of 3\n\nWhat did you work on since the last standup?\n\nType your answer below:"
+            }
+          }
+        ]
+      },
+      {
+        "send": { "text": "Fixed a bug in the auth module" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "✅ 1. What did you work on since the last standup?\n📋 Question 2 of 3\n\nWhat do you plan to work on today?\n\nType your answer below:"
+            }
+          }
+        ]
+      }
+    ]
+  }
+]

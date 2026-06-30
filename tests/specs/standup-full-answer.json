@@ -1,0 +1,78 @@
+[
+  {
+    "name": "Standup answer flow — complete 3-question flow",
+    "steps": [
+      {
+        "send": { "callback": "team:create" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "✨ Let's set up your team!\n\nFirst, what's your team called?"
+            }
+          }
+        ]
+      },
+      {
+        "send": { "text": "DevTeam" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "Got it! Now let's set up your channel for digests.\n\n**Forward any message from your team's channel** to me — I'll grab the channel ID from it. That's the easiest way."
+            }
+          }
+        ]
+      },
+      {
+        "send": { "text": "-1005555555550" },
+        "expect": [
+          {
+            "method": "sendMessage"
+          }
+        ]
+      },
+      {
+        "send": { "callback": "standup:answer" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "📋 Question 1 of 3\n\nWhat did you work on since the last standup?\n\nType your answer below:"
+            }
+          }
+        ]
+      },
+      {
+        "send": { "text": "Refactored the API layer" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "✅ 1. What did you work on since the last standup?\n📋 Question 2 of 3\n\nWhat do you plan to work on today?\n\nType your answer below:"
+            }
+          }
+        ]
+      },
+      {
+        "send": { "text": "Add tests for the new feature" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "✅ 1. What did you work on since the last standup?\n✅ 2. What do you plan to work on today?\n📋 Question 3 of 3\n\nAny blockers or issues?\n\nType your answer below:"
+            }
+          }
+        ]
+      },
+      {
+        "send": { "text": "Waiting on the design team for mockups — blocker" },
+        "expect": [
+          {
+            "method": "sendMessage"
+          }
+        ]
+      }
+    ]
+  }
+]
