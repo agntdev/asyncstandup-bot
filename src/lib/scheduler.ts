@@ -10,7 +10,7 @@ import type { Api, RawApi } from "grammy";
 import * as data from "./data.js";
 import { now } from "./clock.js";
 import * as standup from "./standup.js";
-import { isPastLocalTime, getUtcOffsetMinutes } from "./timezone.js";
+import { isPastLocalTime, getLocalDay, getUtcOffsetMinutes } from "./timezone.js";
 import type { Member, Team } from "./types.js";
 
 type Logger = (msg: string) => void;
@@ -88,9 +88,19 @@ export async function tick(
     const team = await data.getTeam(teamId);
     if (!team) continue;
 
-    // Guard: today must be a scheduled day
-    const todayDay = n.getUTCDay(); // Sun=0 … Sat=6
-    if (!team.scheduleDays.includes(todayDay)) continue;
+    // Guard: Must be a scheduled day somewhere in the team. Use a ±1 day window
+    // because members in far-ahead/far-behind timezones may already be on the next
+    // or still on the previous calendar day relative to UTC. The per-member
+    // prompt delivery below rejects members whose local day isn't scheduled.
+    const todayUtcDay = n.getUTCDay(); // Sun=0 … Sat=6
+    const yesterdayDay = (todayUtcDay + 6) % 7;
+    const tomorrowDay = (todayUtcDay + 1) % 7;
+    if (
+      !team.scheduleDays.includes(todayUtcDay) &&
+      !team.scheduleDays.includes(yesterdayDay) &&
+      !team.scheduleDays.includes(tomorrowDay)
+    )
+      continue;
 
     const date = n.toISOString().slice(0, 10);
     const run = await data.getRun(teamId, date);
@@ -190,6 +200,10 @@ async function deliverTimezoneAwarePrompts(
     // Check if this member's local time has reached the scheduled hour
     const tz = member.timeZone || "UTC";
     if (!isPastLocalTime(team.localTime, tz)) continue;
+
+    // Check if today is a scheduled day in this member's LOCAL timezone
+    const localDay = getLocalDay(tz);
+    if (!team.scheduleDays.includes(localDay)) continue;
 
     log(`Prompting member #${member.id} (${tz}) for team "${team.name}"`);
     try {
