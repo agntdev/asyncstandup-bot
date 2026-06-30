@@ -58,6 +58,7 @@ composer.callbackQuery("menu:main", async (ctx) => {
   ctx.session.step = undefined;
   ctx.session.teamSetupStep = undefined;
   ctx.session.teamSetupData = undefined;
+  ctx.session.channelShareTeamId = undefined;
   ctx.session.answerQuestionIndex = undefined;
   ctx.session.answerResponses = undefined;
   ctx.session.answerTeamId = undefined;

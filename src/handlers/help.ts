@@ -10,6 +10,10 @@ const HELP =
   "• Each workday, I send you a standup prompt in private\n" +
   "• You reply with what you did, plan to do, and any blockers\n" +
   "• I compile answers into a digest posted to your team channel\n\n" +
+  "**Setting up your channel:**\n" +
+  "• Go to Manage Team → Share team channel\n" +
+  "• Forward any message from your channel to me\n" +
+  "• I'll grab the channel info — no need to look up IDs\n\n" +
   "Use the buttons to start a standup, view history, or manage your team.\n" +
   "Everything is reachable by tapping — no commands to remember.";
 

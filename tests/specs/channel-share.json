@@ -1,0 +1,51 @@
+[
+  {
+    "name": "Share team channel when no team shows helpful message",
+    "steps": [
+      {
+        "send": { "callback": "team:channel:share" },
+        "expect": [
+          { "method": "editMessageText", "payload": { "text": "You're not in a team yet. Create or join one first from the Manage Team menu." } }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Enter channel ID manually when no team shows helpful message",
+    "steps": [
+      {
+        "send": { "callback": "team:channel:manual" },
+        "expect": [
+          { "method": "sendMessage", "payload": { "text": "You're not in a team yet. Create or join one first from the Manage Team menu." } }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Channel forward rejected when not in share flow",
+    "steps": [
+      {
+        "send": {
+          "update": {
+            "update_id": 100,
+            "message": {
+              "message_id": 100,
+              "date": 0,
+              "chat": { "id": 1, "type": "private", "first_name": "Test" },
+              "from": { "id": 1, "is_bot": false, "first_name": "Test" },
+              "forward_origin": {
+                "type": "channel",
+                "date": 0,
+                "chat": { "id": -1001234567890, "type": "channel", "title": "My Team Channel" }
+              },
+              "text": "some message"
+            }
+          }
+        },
+        "expect": [
+          { "method": "sendMessage", "payload": { "text": "Sorry, I didn't understand that. Try /help." } }
+        ]
+      }
+    ]
+  }
+]
