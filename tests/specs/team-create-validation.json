@@ -1,0 +1,27 @@
+[
+  {
+    "name": "Create team flow with invalid name (too short)",
+    "steps": [
+      {
+        "send": { "callback": "team:create" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "✨ Let's set up your team!\n\nFirst, what's your team called?"
+            }
+          }
+        ]
+      },
+      {
+        "send": { "text": "X" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": { "text": "Name too short — try again with at least 2 characters." }
+          }
+        ]
+      }
+    ]
+  }
+]

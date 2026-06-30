@@ -3,6 +3,7 @@ import { existsSync, readdirSync, readFileSync } from "fs";
 import { join } from "path";
 import { buildBot } from "../src/bot";
 import { formatSuiteResult, parseBotSpecs, runSpecs } from "../src/toolkit/harness/run-specs";
+import { setStore, resetStore } from "../src/lib/store";
 
 // THE PUBLISH GATE replays every tests/specs/*.json against your built bot via the
 // toolkit harness, and fails the build on any mismatch. This test runs the SAME
@@ -22,7 +23,15 @@ describe("dialog specs (the publish gate replays these)", () => {
     const specs = files.flatMap((f) =>
       parseBotSpecs(JSON.parse(readFileSync(join(SPECS_DIR, f), "utf8"))),
     );
-    const suite = await runSpecs(() => buildBot("123456:TEST"), specs);
+
+    // Reset persistent store + clock BEFORE each fresh bot so data from
+    // one spec doesn't leak into the next (e.g. team creation → "no team").
+    const suite = await runSpecs(() => {
+      resetStore();
+      setStore(null);
+      return buildBot("123456:TEST");
+    }, specs);
+
     expect(suite.failed, "\n" + formatSuiteResult(suite)).toBe(0);
   });
 });

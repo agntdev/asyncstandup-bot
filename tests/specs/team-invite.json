@@ -1,0 +1,48 @@
+[
+  {
+    "name": "Team with members shows invite code",
+    "steps": [
+      {
+        "send": { "callback": "team:create" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "✨ Let's set up your team!\n\nFirst, what's your team called?"
+            }
+          }
+        ]
+      },
+      {
+        "send": { "text": "AlphaTeam" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "Got it! Now let's set up your channel for digests.\n\n**Forward any message from your team's channel** to me — I'll grab the channel ID from it. That's the easiest way."
+            }
+          }
+        ]
+      },
+      {
+        "send": { "text": "-1001234567890" },
+        "expect": [
+          {
+            "method": "sendMessage"
+          }
+        ]
+      },
+      {
+        "send": { "callback": "team:invite" },
+        "expect": [
+          {
+            "method": "editMessageText",
+            "payload": {
+              "text": "🔗 Share this with your teammates:\n\nInvite link: t.me/test_bot?start=alphateam\nOr tell them to enter this code: `alphateam`\n\nThey can join by tapping Manage Team → Join with code."
+            }
+          }
+        ]
+      }
+    ]
+  }
+]

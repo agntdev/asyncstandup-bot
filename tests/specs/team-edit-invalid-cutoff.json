@@ -1,0 +1,59 @@
+[
+  {
+    "name": "Edit cutoff with invalid value shows error",
+    "steps": [
+      {
+        "send": { "callback": "team:create" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "✨ Let's set up your team!\n\nFirst, what's your team called?"
+            }
+          }
+        ]
+      },
+      {
+        "send": { "text": "CutoffTest" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "Got it! Now let's set up your channel for digests.\n\n**Forward any message from your team's channel** to me — I'll grab the channel ID from it. That's the easiest way."
+            }
+          }
+        ]
+      },
+      {
+        "send": { "text": "-1004444444440" },
+        "expect": [
+          {
+            "method": "sendMessage"
+          }
+        ]
+      },
+      {
+        "send": { "callback": "team:edit:cutoff" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "How many minutes after the standup prompt should the digest be compiled?\n\nSend a number (e.g. 60, 90, 120):"
+            }
+          }
+        ]
+      },
+      {
+        "send": { "text": "3" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "Please send a number between 5 and 480 minutes."
+            }
+          }
+        ]
+      }
+    ]
+  }
+]

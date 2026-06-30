@@ -1,0 +1,38 @@
+[
+  {
+    "name": "Create team flow cancelled via button",
+    "steps": [
+      {
+        "send": { "callback": "team:create" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "✨ Let's set up your team!\n\nFirst, what's your team called?"
+            }
+          }
+        ]
+      },
+      {
+        "send": { "text": "Engineering" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "Got it! Now let's set up your channel for digests.\n\n**Forward any message from your team's channel** to me — I'll grab the channel ID from it. That's the easiest way."
+            }
+          }
+        ]
+      },
+      {
+        "send": { "callback": "team:create:cancel" },
+        "expect": [
+          {
+            "method": "editMessageText",
+            "payload": { "text": "Team creation cancelled." }
+          }
+        ]
+      }
+    ]
+  }
+]

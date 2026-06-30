@@ -1,0 +1,34 @@
+[
+  {
+    "name": "Join team with invalid code shows error",
+    "steps": [
+      {
+        "send": { "callback": "team:settings" },
+        "expect": [
+          {
+            "method": "editMessageText",
+            "payload": { "text": "You're not in a team yet. Would you like to create one or join an existing team?" }
+          }
+        ]
+      },
+      {
+        "send": { "callback": "team:join:prompt" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": { "text": "🔗 Enter the team code your admin shared with you:" }
+          }
+        ]
+      },
+      {
+        "send": { "text": "nonexistent-team" },
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": { "text": "Couldn't find a team with that code. Check the spelling and try again, or ask your admin for the right code." }
+          }
+        ]
+      }
+    ]
+  }
+]
