@@ -106,6 +106,22 @@ composer.callbackQuery("standup:skip", async (ctx) => {
   }
   await data.saveRun(run);
 
+  // MEDIUM FIX: After a skip, check if all members have now responded. If the
+  // last pending member taps "Skip", the digest should compile immediately
+  // (matching the blueprint's "or when all respond" contract) rather than
+  // waiting until the scheduler cutoff fires — potentially hours later.
+  const allDone = run.responses.every((r) => r.status !== "pending");
+  if (allDone && run.responses.length > 0) {
+    const team = await data.getTeam(teamId);
+    if (team) {
+      try {
+        await standup.compileAndPostDigest(ctx.api, team);
+      } catch (err) {
+        console.error("Failed to compile digest after skip:", err);
+      }
+    }
+  }
+
   await ctx.reply("👍 Got it — you're marked as skipped for today's standup.");
 });
 

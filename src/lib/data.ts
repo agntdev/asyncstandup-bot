@@ -67,6 +67,20 @@ export async function getMember(userId: number): Promise<Member | null> {
 }
 
 export async function saveMember(member: Member): Promise<void> {
+  // HIGH FIX: If the member previously belonged to a different team, clean up
+  // the old team's memberIds index BEFORE saving the new membership. Otherwise
+  // the member stays in BOTH teams' member lists, which causes incorrect member
+  // counts, digests that include departed members, and a violation of the data
+  // model where one user appears in multiple teams.
+  const prev = await getMember(member.id);
+  if (prev && prev.teamId !== member.teamId) {
+    const oldTeam = await getTeam(prev.teamId);
+    if (oldTeam) {
+      oldTeam.memberIds = oldTeam.memberIds.filter((id) => id !== member.id);
+      await getStore().set(K.team(oldTeam.id), oldTeam);
+    }
+  }
+
   await getStore().set(K.member(member.id), member);
   await setUserTeam(member.id, member.teamId);
   // Ensure member is in the team's memberIds index
