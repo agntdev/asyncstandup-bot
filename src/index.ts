@@ -1,13 +1,18 @@
 import { buildBot } from "./bot.js";
 import { setDefaultCommands } from "./toolkit/index.js";
 import { startScheduler } from "./lib/scheduler.js";
+import { readFileSync } from "node:fs";
+
+function resolveBotToken(): string {
+  const direct = process.env.BOT_TOKEN?.trim();
+  if (direct) return direct;
+  const file = process.env.BOT_TOKEN_FILE;
+  if (file) return readFileSync(file, "utf8").trim();
+  throw new Error("BOT_TOKEN or BOT_TOKEN_FILE must be set");
+}
 
 async function main() {
-  const token = process.env.BOT_TOKEN;
-  if (!token) {
-    console.error("BOT_TOKEN is required");
-    process.exit(1);
-  }
+  const token = resolveBotToken();
   const bot = await buildBot(token);
   // Publish the "/" command list to Telegram (discoverability). A button-first
   // bot exposes only /start + /help; everything else is reached via menu buttons.
