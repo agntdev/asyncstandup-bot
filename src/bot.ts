@@ -14,6 +14,8 @@ export interface Session {
   // Team setup flow
   teamSetupStep?: string;
   teamSetupData?: Record<string, unknown>;
+  // Channel sharing flow (forwarded message from channel)
+  channelShareTeamId?: string;
   // History flow
   historyTeamId?: string;
   historyDays?: number;

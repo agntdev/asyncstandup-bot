@@ -11,6 +11,7 @@ export interface Team {
   id: string; // join-code / slug
   name: string;
   channelId: number; // Telegram channel/group chat id where digests are posted
+  channelTitle?: string; // Human-readable channel title (set via the share flow)
   scheduleDays: number[]; // 0=Sun … 6=Sat
   localTime: string; // "HH:MM" in the team's default timezone
   cutoffWindowMinutes: number; // how long after prompt before digest compiles

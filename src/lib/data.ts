@@ -55,6 +55,11 @@ export async function setTeamChannel(teamId: string, channelId: number): Promise
   await getStore().set(`channel:${channelId}`, teamId);
 }
 
+/** Remove a channel → team reverse index entry (e.g. when channel changes). */
+export async function removeTeamChannel(channelId: number): Promise<void> {
+  await getStore().del(`channel:${channelId}`);
+}
+
 // ── Member CRUD ──────────────────────────────────────────────────────────
 
 export async function getMember(userId: number): Promise<Member | null> {

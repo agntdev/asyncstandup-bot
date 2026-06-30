@@ -24,6 +24,29 @@ const BACK_ROW = [inlineButton("⬅️ Back to menu", "menu:main")];
 
 const composer = new Composer<Ctx>();
 
+// ── Helpers ──────────────────────────────────────────────────────────────
+
+/**
+ * Extract channel ID and title from a forwarded message's forward_origin.
+ * Telegram's forward_origin type is "channel" when a message is forwarded
+ * from a channel. Returns null if message wasn't forwarded from a channel.
+ */
+function extractChannelFromForward(ctx: Ctx): { channelId: number; channelTitle: string } | null {
+  const msg = ctx.message;
+  if (!msg) return null;
+  // The forward_origin field has a type discriminator. Cast through unknown
+  // because grammY's NonChannel type doesn't include forward_origin at the
+  // type level even though the runtime value carries it.
+  const fo = (msg as unknown as Record<string, unknown>).forward_origin as
+    | { type: string; chat?: { id: number; title?: string; type: string } }
+    | undefined;
+  if (!fo || fo.type !== "channel" || !fo.chat) return null;
+  return {
+    channelId: fo.chat.id,
+    channelTitle: fo.chat.title ?? `Channel ${fo.chat.id}`,
+  };
+}
+
 // ── Team: main settings view ─────────────────────────────────────────────
 
 composer.callbackQuery("team:settings", async (ctx) => {
@@ -61,13 +84,17 @@ composer.callbackQuery("team:settings", async (ctx) => {
     )
     .join(", ");
 
+  const channelLabel = team.channelTitle
+    ? `${team.channelTitle} (${team.channelId})`
+    : String(team.channelId);
+
   const text =
     `⚙️ **${team.name}**\n\n` +
     `Schedule: ${scheduleDays} at ${team.localTime}\n` +
     `Cutoff: ${team.cutoffWindowMinutes} min after prompt\n` +
     `Questions: ${team.questions.length}\n` +
     `Members: ${memberCount}\n` +
-    `Channel ID: ${team.channelId}\n\n` +
+    `Channel: ${channelLabel}\n\n` +
     `Tap a setting to change it, or share your team code with teammates.`;
 
   await ctx.editMessageText(text, {
@@ -78,10 +105,224 @@ composer.callbackQuery("team:settings", async (ctx) => {
       [inlineButton("⏱️ Edit cutoff", "team:edit:cutoff")],
       [inlineButton("🔑 Edit blocker words", "team:edit:blockers")],
       [inlineButton("👥 Manage members", "team:members")],
+      [inlineButton("📢 Share team channel", "team:channel:share")],
       [inlineButton("🔗 Team invite code", "team:invite")],
       BACK_ROW,
     ]),
   });
+});
+
+// ── Channel sharing flow ─────────────────────────────────────────────────
+
+composer.callbackQuery("team:channel:share", async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const userId = ctx.from!.id;
+  const teamId = await data.getUserTeamId(userId);
+  if (!teamId) {
+    await ctx.editMessageText(
+      "You're not in a team yet. Create or join one first from the Manage Team menu.",
+      { reply_markup: inlineKeyboard([BACK_ROW]) },
+    );
+    return;
+  }
+
+  const team = await data.getTeam(teamId);
+  if (!team) return;
+
+  // Set session to await forwarded message
+  ctx.session.channelShareTeamId = teamId;
+
+  await ctx.editMessageText(
+    "📢 To link your team's channel, **forward any message from that channel** to me.\n\n" +
+      "I'll grab the channel ID from the forwarded message — no need to look it up yourself.\n\n" +
+      "Make sure the bot has been added as an admin to the channel first, or I won't be able to post digests there later.",
+    {
+      reply_markup: inlineKeyboard([
+        [inlineButton("⌨️ Enter channel ID manually", "team:channel:manual")],
+        [inlineButton("⬅️ Back to settings", "team:settings")],
+      ]),
+    },
+  );
+});
+
+// ── Forwarded message handler — catches channel forwards ─────────────────
+
+composer.on("message", async (ctx, next) => {
+  const teamId = ctx.session.channelShareTeamId;
+  if (!teamId) return next();
+
+  const extracted = extractChannelFromForward(ctx);
+  if (!extracted) {
+    // User sent something that isn't a channel forward
+    await ctx.reply(
+      "That doesn't look like a forwarded message from a channel. " +
+        "Forward any message from your team's channel to this bot — " +
+        "I'll grab the channel info from it.\n\n" +
+        "Need help? Tap a button below.",
+      {
+        reply_markup: inlineKeyboard([
+          [inlineButton("⌨️ Enter channel ID manually", "team:channel:manual")],
+          [inlineButton("❌ Cancel", "team:settings")],
+        ]),
+      },
+    );
+    return;
+  }
+
+  // Got a valid forward — show confirmation
+  ctx.session.channelShareTeamId = undefined;
+  (ctx.session.teamSetupData ??= {})["shared_channel_id"] = extracted.channelId;
+  (ctx.session.teamSetupData ??= {})["shared_channel_title"] = extracted.channelTitle;
+  (ctx.session.teamSetupData ??= {})["shared_channel_team_id"] = teamId;
+
+  await ctx.reply(
+    `📢 Channel found!\n\n` +
+      `**${extracted.channelTitle}**\n` +
+      `Channel ID: \`${extracted.channelId}\`\n\n` +
+      `Is this the right channel for standup digests?`,
+    {
+      reply_markup: inlineKeyboard([
+        [inlineButton("✅ Yes, save this channel", "team:channel:confirm")],
+        [inlineButton("❌ No, try again", "team:channel:share")],
+      ]),
+    },
+  );
+});
+
+// ── Confirm channel save ─────────────────────────────────────────────────
+
+composer.callbackQuery("team:channel:confirm", async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const teamId = (ctx.session.teamSetupData ?? {})["shared_channel_team_id"] as string;
+  const channelId = (ctx.session.teamSetupData ?? {})["shared_channel_id"] as number;
+  const channelTitle = (ctx.session.teamSetupData ?? {})["shared_channel_title"] as string;
+
+  ctx.session.channelShareTeamId = undefined;
+  ctx.session.teamSetupData = undefined;
+
+  if (!teamId || !channelId) {
+    await ctx.editMessageText(
+      "Something went wrong — the channel info wasn't saved. Try sharing again.",
+      { reply_markup: inlineKeyboard([BACK_ROW]) },
+    );
+    return;
+  }
+
+  const team = await data.getTeam(teamId);
+  if (!team) {
+    await ctx.editMessageText("Team not found.", {
+      reply_markup: inlineKeyboard([BACK_ROW]),
+    });
+    return;
+  }
+
+  // Update channel and re-index
+  const oldChannelId = team.channelId;
+  team.channelId = channelId;
+  team.channelTitle = channelTitle;
+  await data.saveTeam(team);
+  // Rebuild the channel reverse index: remove old, set new
+  if (oldChannelId && oldChannelId !== channelId) {
+    await data.removeTeamChannel(oldChannelId);
+  }
+  await data.setTeamChannel(teamId, channelId);
+
+  await ctx.editMessageText(
+    `✅ Channel linked!\n\n` +
+      `Digests will now post to **${channelTitle}** (${channelId}).\n\n` +
+      `Make sure the bot has permission to post messages in that channel.`,
+    {
+      reply_markup: inlineKeyboard([
+        [inlineButton("⚙️ Back to settings", "team:settings")],
+        BACK_ROW,
+      ]),
+    },
+  );
+});
+
+// ── Manual channel ID entry (fallback) ───────────────────────────────────
+
+composer.callbackQuery("team:channel:manual", async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const userId = ctx.from!.id;
+  const teamId = ctx.session.channelShareTeamId || await data.getUserTeamId(userId);
+  if (!teamId) {
+    await ctx.reply(
+      "You're not in a team yet. Create or join one first from the Manage Team menu.",
+      { reply_markup: inlineKeyboard([BACK_ROW]) },
+    );
+    return;
+  }
+
+  ctx.session.channelShareTeamId = undefined;
+  ctx.session.teamSetupStep = "channel:manual";
+  (ctx.session.teamSetupData ??= {})["teamId"] = teamId;
+
+  await ctx.reply(
+    "Enter the Telegram channel ID where digests should be posted.\n\n" +
+      "It's a negative number like `-1001234567890`. " +
+      "You can find it by forwarding a message from the channel to @RawDataBot.",
+    {
+      reply_markup: {
+        force_reply: true,
+        input_field_placeholder: "e.g. -1001234567890",
+      },
+    },
+  );
+});
+
+// ── Handle manual channel ID text input ──────────────────────────────────
+
+composer.on("message:text", async (ctx, next) => {
+  if (ctx.session.teamSetupStep !== "channel:manual") return next();
+  if (!ctx.message?.text) return next();
+
+  const teamId = (ctx.session.teamSetupData ?? {})["teamId"] as string;
+  if (!teamId) {
+    ctx.session.teamSetupStep = undefined;
+    ctx.session.teamSetupData = undefined;
+    return;
+  }
+
+  const channelId = parseInt(ctx.message.text.trim(), 10);
+  if (isNaN(channelId)) {
+    await ctx.reply(
+      "That doesn't look like a valid channel ID. It should be a number like -1001234567890. Try again.",
+      {
+        reply_markup: {
+          force_reply: true,
+          input_field_placeholder: "e.g. -1001234567890",
+        },
+      },
+    );
+    return;
+  }
+
+  const team = await data.getTeam(teamId);
+  if (!team) {
+    ctx.session.teamSetupStep = undefined;
+    ctx.session.teamSetupData = undefined;
+    await ctx.reply("Team not found.");
+    return;
+  }
+
+  const oldChannelId = team.channelId;
+  team.channelId = channelId;
+  // Clear any old channel title (manually entered channels won't have one)
+  // but preserve an existing title if it was previously shared
+  await data.saveTeam(team);
+  if (oldChannelId && oldChannelId !== channelId) {
+    await data.removeTeamChannel(oldChannelId);
+  }
+  await data.setTeamChannel(teamId, channelId);
+
+  ctx.session.teamSetupStep = undefined;
+  ctx.session.teamSetupData = undefined;
+
+  await ctx.reply(
+    `✅ Channel set to ${channelId}. Make sure the bot can post there.`,
+    { reply_markup: inlineKeyboard([BACK_ROW]) },
+  );
 });
 
 // ── Create team flow ─────────────────────────────────────────────────────
@@ -113,63 +354,137 @@ composer.on("message:text", async (ctx, next) => {
     ctx.session.teamSetupStep = "create:awaiting_channel";
     (ctx.session.teamSetupData ??= {})["name"] = name;
 
+    // Channel flow: offer share-or-manual
     await ctx.reply(
-      "Got it! Now send me the Telegram channel ID where digests will be posted.\n\n" +
-        "The channel ID is a negative number (e.g. -1001234567890). " +
-        "You can get it by forwarding a message from the channel to @RawDataBot.",
+      "Got it! Now let's set up your channel for digests.\n\n" +
+        "**Forward any message from your team's channel** to me — " +
+        "I'll grab the channel ID from it. That's the easiest way.",
       {
-        reply_markup: {
-          force_reply: true,
-          input_field_placeholder: "e.g. -1001234567890",
-        },
+        reply_markup: inlineKeyboard([
+          [inlineButton("⌨️ Enter channel ID manually", "team:channel:manual")],
+          [inlineButton("❌ Cancel", "team:create:cancel")],
+        ]),
       },
     );
     return;
   }
 
-  if (step === "create:awaiting_channel") {
-    const channelId = parseInt(ctx.message.text.trim(), 10);
-    if (isNaN(channelId)) {
-      await ctx.reply(
-        "That doesn't look like a valid channel ID. It should be a number like -1001234567890. Try again.",
-      );
-      return;
-    }
+  return next();
+});
 
-    const name = (ctx.session.teamSetupData ?? {})["name"] as string;
-    const teamId = name.toLowerCase().replace(/[^a-z0-9]/g, "-").slice(0, 32);
+// ── Channel forwarded during team creation ───────────────────────────────
 
-    const team = createTeam({
-      id: teamId,
-      name,
-      channelId,
+composer.on("message", async (ctx, next) => {
+  // Only intercept forwarded messages during the channel-wait step in create flow
+  const step = ctx.session.teamSetupStep;
+  if (step !== "create:awaiting_channel") return next();
+
+  const extracted = extractChannelFromForward(ctx);
+  if (!extracted) {
+    // User sent regular text — maybe they're typing the ID manually?
+    // Fall through to the manual channel entry handler below
+    return next();
+  }
+
+  // Valid forward received — create the team with this channel
+  const name = (ctx.session.teamSetupData ?? {})["name"] as string;
+  const channelId = extracted.channelId;
+  const channelTitle = extracted.channelTitle;
+  const teamId = name.toLowerCase().replace(/[^a-z0-9]/g, "-").slice(0, 32);
+
+  const team = createTeam({
+    id: teamId,
+    name,
+    channelId,
+    channelTitle,
+  });
+
+  await data.saveTeam(team);
+  await data.setTeamChannel(teamId, channelId);
+
+  const userId = ctx.from!.id;
+  const member = createMember({ id: userId, teamId });
+  await data.saveMember(member);
+  await data.setUserTeam(userId, teamId);
+
+  team.memberIds.push(userId);
+  await data.saveTeam(team);
+
+  ctx.session.teamSetupStep = undefined;
+  ctx.session.teamSetupData = undefined;
+
+  await ctx.reply(
+    `✅ Team "${name}" is all set!\n\n` +
+      `Channel: **${channelTitle}**\n` +
+      `Your team code is: \`${teamId}\`\n` +
+      `Share this with teammates — they can join by tapping the Manage Team menu and entering the code.\n\n` +
+      `Your invite link: t.me/${ctx.me.username}?start=${teamId}`,
+    { reply_markup: inlineKeyboard([BACK_ROW]) },
+  );
+});
+
+// ── Cancel team creation ─────────────────────────────────────────────────
+
+composer.callbackQuery("team:create:cancel", async (ctx) => {
+  await ctx.answerCallbackQuery();
+  ctx.session.teamSetupStep = undefined;
+  ctx.session.teamSetupData = undefined;
+
+  try {
+    await ctx.editMessageText("Team creation cancelled.", {
+      reply_markup: inlineKeyboard([BACK_ROW]),
     });
+  } catch {
+    await ctx.reply("Team creation cancelled.", {
+      reply_markup: inlineKeyboard([BACK_ROW]),
+    });
+  }
+});
 
-    await data.saveTeam(team);
-    await data.setTeamChannel(teamId, channelId);
+// ── Text handler for create:awaiting_channel (manual ID entry during create) ──
 
-    const userId = ctx.from!.id;
-    const member = createMember({ id: userId, teamId });
-    await data.saveMember(member);
-    await data.setUserTeam(userId, teamId);
+composer.on("message:text", async (ctx, next) => {
+  if (ctx.session.teamSetupStep !== "create:awaiting_channel") return next();
+  if (!ctx.message?.text) return next();
 
-    team.memberIds.push(userId);
-    await data.saveTeam(team);
-
-    ctx.session.teamSetupStep = undefined;
-    ctx.session.teamSetupData = undefined;
-
+  const channelId = parseInt(ctx.message.text.trim(), 10);
+  if (isNaN(channelId)) {
     await ctx.reply(
-      `✅ Team "${name}" is all set!\n\n` +
-        `Your team code is: \`${teamId}\`\n` +
-        `Share this with teammates — they can join by tapping the Manage Team menu and entering the code.\n\n` +
-        `Your invite link: t.me/${ctx.me.username}?start=${teamId}`,
-      { reply_markup: inlineKeyboard([BACK_ROW]) },
+      "That doesn't look like a valid channel ID. Forward a message from the channel instead (that's easier!), or send the ID as a number like -1001234567890. Try again.",
     );
     return;
   }
 
-  return next();
+  const name = (ctx.session.teamSetupData ?? {})["name"] as string;
+  const teamId = name.toLowerCase().replace(/[^a-z0-9]/g, "-").slice(0, 32);
+
+  const team = createTeam({
+    id: teamId,
+    name,
+    channelId,
+  });
+
+  await data.saveTeam(team);
+  await data.setTeamChannel(teamId, channelId);
+
+  const userId = ctx.from!.id;
+  const member = createMember({ id: userId, teamId });
+  await data.saveMember(member);
+  await data.setUserTeam(userId, teamId);
+
+  team.memberIds.push(userId);
+  await data.saveTeam(team);
+
+  ctx.session.teamSetupStep = undefined;
+  ctx.session.teamSetupData = undefined;
+
+  await ctx.reply(
+    `✅ Team "${name}" is all set!\n\n` +
+      `Your team code is: \`${teamId}\`\n` +
+      `Share this with teammates — they can join by tapping the Manage Team menu and entering the code.\n\n` +
+      `Your invite link: t.me/${ctx.me.username}?start=${teamId}`,
+    { reply_markup: inlineKeyboard([BACK_ROW]) },
+  );
 });
 
 // ── Join team with code ──────────────────────────────────────────────────
