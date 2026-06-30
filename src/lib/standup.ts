@@ -241,34 +241,54 @@ export async function compileAndPostDigest(
   const run = await data.getRun(team.id, date);
   if (!run || run.status === "compiled") return run?.digestContent ?? null;
 
-  const members = await data.getTeamMembers(team.id);
-  const { digestText, blockerSummary } = compileDigest(team, run, members);
-
-  run.status = "compiled";
-  run.digestContent = digestText;
-  run.blockerSummary = blockerSummary;
-  await data.saveRun(run);
-
-  let channelMessage = digestText;
-  if (blockerSummary && blockerSummary !== "No blockers reported today.") {
-    channelMessage += `\n\n─── ⚠️ Blocker Report ───\n${blockerSummary}`;
+  // Distributed lock to prevent duplicate digest posting when two
+  // concurrent invocations (e.g. last-member-answer allDone + scheduler
+  // cutoff) both read run.status !== "compiled" before either saves.
+  // Redis-backed SETNX ensures only one call proceeds. Lock TTL = 120s.
+  const lockKey = `lock:digest:${team.id}:${date}`;
+  const { getStore } = await import("./store.js");
+  const acquired = await getStore().setnx(lockKey, 120, "locked");
+  if (!acquired) {
+    // Another invocation is already compiling this digest — wait briefly
+    // for it to finish, then return the saved result.
+    await new Promise((r) => setTimeout(r, 500));
+    const recheck = await data.getRun(team.id, date);
+    return recheck?.digestContent ?? null;
   }
 
   try {
-    await api.sendMessage(team.channelId, channelMessage);
-  } catch (err) {
-    console.error(
-      `Failed to post digest to channel ${team.channelId}:`,
-      err,
-    );
+    const members = await data.getTeamMembers(team.id);
+    const { digestText, blockerSummary } = compileDigest(team, run, members);
+
+    run.status = "compiled";
+    run.digestContent = digestText;
+    run.blockerSummary = blockerSummary;
+    await data.saveRun(run);
+
+    let channelMessage = digestText;
+    if (blockerSummary && blockerSummary !== "No blockers reported today.") {
+      channelMessage += `\n\n─── ⚠️ Blocker Report ───\n${blockerSummary}`;
+    }
+
+    try {
+      await api.sendMessage(team.channelId, channelMessage);
+    } catch (err) {
+      console.error(
+        `Failed to post digest to channel ${team.channelId}:`,
+        err,
+      );
+      return digestText;
+    }
+
+    const historyEntry = createHistoryEntry(run, digestText, blockerSummary);
+    await data.saveHistoryEntry(historyEntry);
+    await data.addHistoryDay(team.id, date);
+
     return digestText;
+  } finally {
+    // Release the lock so it can be reused (the TTL is a safety net).
+    await getStore().del(lockKey);
   }
-
-  const historyEntry = createHistoryEntry(run, digestText, blockerSummary);
-  await data.saveHistoryEntry(historyEntry);
-  await data.addHistoryDay(team.id, date);
-
-  return digestText;
 }
 
 // ── Prompt a single member ───────────────────────────────────────────────

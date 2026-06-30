@@ -412,7 +412,7 @@ composer.on("message", async (ctx, next) => {
   const name = (ctx.session.teamSetupData ?? {})["name"] as string;
   const channelId = extracted.channelId;
   const channelTitle = extracted.channelTitle;
-  const teamId = name.toLowerCase().replace(/[^a-z0-9]/g, "-").slice(0, 32);
+  const teamId = await data.generateUniqueTeamId(name);
 
   const team = createTeam({
     id: teamId,
@@ -427,10 +427,6 @@ composer.on("message", async (ctx, next) => {
   const userId = ctx.from!.id;
   const member = createMember({ id: userId, teamId });
   await data.saveMember(member);
-  await data.setUserTeam(userId, teamId);
-
-  team.memberIds.push(userId);
-  await data.saveTeam(team);
 
   ctx.session.teamSetupStep = undefined;
   ctx.session.teamSetupData = undefined;
@@ -478,7 +474,7 @@ composer.on("message:text", async (ctx, next) => {
   }
 
   const name = (ctx.session.teamSetupData ?? {})["name"] as string;
-  const teamId = name.toLowerCase().replace(/[^a-z0-9]/g, "-").slice(0, 32);
+  const teamId = await data.generateUniqueTeamId(name);
 
   const team = createTeam({
     id: teamId,
@@ -492,10 +488,6 @@ composer.on("message:text", async (ctx, next) => {
   const userId = ctx.from!.id;
   const member = createMember({ id: userId, teamId });
   await data.saveMember(member);
-  await data.setUserTeam(userId, teamId);
-
-  team.memberIds.push(userId);
-  await data.saveTeam(team);
 
   ctx.session.teamSetupStep = undefined;
   ctx.session.teamSetupData = undefined;
@@ -561,12 +553,6 @@ composer.on("message:text", async (ctx, next) => {
 
   const member = createMember({ id: userId, teamId: code });
   await data.saveMember(member);
-  await data.setUserTeam(userId, code);
-
-  if (!team.memberIds.includes(userId)) {
-    team.memberIds.push(userId);
-    await data.saveTeam(team);
-  }
 
   ctx.session.teamSetupStep = undefined;
   ctx.session.teamSetupData = undefined;
