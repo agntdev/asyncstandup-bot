@@ -245,6 +245,28 @@ composer.callbackQuery("team:channel:confirm", async (ctx) => {
 composer.callbackQuery("team:channel:manual", async (ctx) => {
   await ctx.answerCallbackQuery();
   const userId = ctx.from!.id;
+
+  // In the create flow, we haven't saved the team yet — prompt for the
+  // channel ID directly and let the create:awaiting_channel text handler
+  // process it (creating the team with the entered channel ID).
+  if (ctx.session.teamSetupStep === "create:awaiting_channel") {
+    try {
+      await ctx.editMessageText(
+        "Enter the Telegram channel ID where digests should be posted.\n\n" +
+          "It's a negative number like `-1001234567890`. " +
+          "You can find it by forwarding a message from the channel to @RawDataBot.",
+        {
+          reply_markup: inlineKeyboard([
+            [inlineButton("❌ Cancel", "team:create:cancel")],
+          ]),
+        },
+      );
+    } catch {
+      // message might not be editable
+    }
+    return;
+  }
+
   const teamId = ctx.session.channelShareTeamId || await data.getUserTeamId(userId);
   if (!teamId) {
     await ctx.reply(
