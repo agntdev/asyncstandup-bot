@@ -29,12 +29,6 @@ composer.command("start", async (ctx) => {
 
       const member = createMember({ id: userId, teamId: team.id });
       await data.saveMember(member);
-      await data.setUserTeam(userId, team.id);
-
-      if (!team.memberIds.includes(userId)) {
-        team.memberIds.push(userId);
-        await data.saveTeam(team);
-      }
 
       return ctx.reply(
         `✅ You've joined "${team.name}"!\n\nTap a button to get started.`,

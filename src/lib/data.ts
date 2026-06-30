@@ -6,7 +6,7 @@
  */
 
 import { getStore, type JsonStore } from "./store.js";
-import { now } from "./clock.js";
+import { now, nowMs } from "./clock.js";
 import type {
   Team,
   Member,
@@ -249,6 +249,36 @@ export async function createTodayRun(teamId: string): Promise<StandupRun> {
   await saveRun(run);
   await addRunDay(teamId, date);
   return run;
+}
+
+// ── Team ID generation ────────────────────────────────────────────────────
+
+/**
+ * Generate a unique team ID slug from a name. Checks for collisions against
+ * existing teams and appends a numeric suffix if needed (e.g. "my-team-2").
+ * Prevents the data-loss bug where two teams with names that slug identically
+ * overwrite each other.
+ */
+export async function generateUniqueTeamId(name: string): Promise<string> {
+  const base = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 32) || "team";
+
+  // Check if base ID is available
+  if (!(await getTeam(base))) return base;
+
+  // Try suffixes
+  for (let i = 2; i < 1000; i++) {
+    const candidate = `${base}-${i}`;
+    if (!(await getTeam(candidate))) return candidate;
+  }
+
+  // Fallback: extremely unlikely to reach this, but use a timestamp suffix
+  const fallback = `${base}-${nowMs()}`;
+  return fallback;
 }
 
 // ── Override for testing ─────────────────────────────────────────────────

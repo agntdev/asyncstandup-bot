@@ -19,7 +19,36 @@ const BACK_ROW = [inlineButton("⬅️ Back to menu", "menu:main")];
 
 const composer = new Composer<Ctx>();
 
-// ── Show history period picker (button-only; no slash command) ────────────
+// ── /history command (blueprint line 47): same period-picker as the button ──
+
+composer.command("history", async (ctx) => {
+  const userId = ctx.from!.id;
+  const teamId = await data.getUserTeamId(userId);
+
+  if (!teamId) {
+    await ctx.reply(
+      "You're not in a team yet. Use Manage Team to set one up.",
+    );
+    return;
+  }
+
+  ctx.session.historyTeamId = teamId;
+
+  await ctx.reply(
+    "📋 How far back would you like to go?",
+    {
+      reply_markup: inlineKeyboard([
+        [inlineButton("Last 7 days", "history:period:7")],
+        [inlineButton("Last 30 days", "history:period:30")],
+        [inlineButton("Last 90 days", "history:period:90")],
+        [inlineButton("⚠️ Recurring blockers", "history:blockers")],
+        BACK_ROW,
+      ]),
+    },
+  );
+});
+
+// ── Show history period picker (button access) ────────────────────────────
 
 composer.callbackQuery("history:show", async (ctx) => {
   await ctx.answerCallbackQuery();

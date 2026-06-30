@@ -16,6 +16,11 @@ export interface KvStore {
   del(key: string): Promise<void>;
   /** Set with TTL in seconds (0 = no expiry). */
   setex(key: string, seconds: number, value: string): Promise<void>;
+  /**
+   * Try to acquire a lock: set `key` to `value` only if it does NOT already
+   * exist, with the given TTL. Returns true if the lock was acquired.
+   */
+  setnx(key: string, seconds: number, value: string): Promise<boolean>;
 }
 
 export interface JsonStore {
@@ -23,9 +28,13 @@ export interface JsonStore {
   set<T>(key: string, value: T): Promise<void>;
   del(key: string): Promise<void>;
   setex<T>(key: string, seconds: number, value: T): Promise<void>;
+  /** Try to set a key only if it doesn't exist, with TTL. Returns true on success. */
+  setnx<T>(key: string, seconds: number, value: T): Promise<boolean>;
 }
 
 // ── In-memory implementation ─────────────────────────────────────────────
+
+import { nowMs } from "./clock.js";
 
 class InMemoryKv implements KvStore {
   private store = new Map<string, { value: string; expiresAt: number }>();
@@ -33,7 +42,7 @@ class InMemoryKv implements KvStore {
   async get(key: string): Promise<string | null> {
     const entry = this.store.get(key);
     if (!entry) return null;
-    if (entry.expiresAt > 0 && Date.now() > entry.expiresAt) {
+    if (entry.expiresAt > 0 && nowMs() > entry.expiresAt) {
       this.store.delete(key);
       return null;
     }
@@ -51,8 +60,23 @@ class InMemoryKv implements KvStore {
   async setex(key: string, seconds: number, value: string): Promise<void> {
     this.store.set(key, {
       value,
-      expiresAt: seconds > 0 ? Date.now() + seconds * 1000 : 0,
+      expiresAt: seconds > 0 ? nowMs() + seconds * 1000 : 0,
     });
+  }
+
+  async setnx(key: string, seconds: number, value: string): Promise<boolean> {
+    const existing = this.store.get(key);
+    // Check expiry on existing entry
+    if (existing && existing.expiresAt > 0 && nowMs() > existing.expiresAt) {
+      this.store.delete(key);
+    } else if (existing) {
+      return false; // Key exists and is not expired
+    }
+    this.store.set(key, {
+      value,
+      expiresAt: seconds > 0 ? nowMs() + seconds * 1000 : 0,
+    });
+    return true;
   }
 }
 
@@ -99,6 +123,15 @@ class RedisKv implements KvStore {
     // ioredis exposes setex — cast via unknown
     await (c as unknown as Record<string, (...args: unknown[]) => unknown>).setex(key, seconds, value);
   }
+
+  async setnx(key: string, seconds: number, value: string): Promise<boolean> {
+    const c = await this.client();
+    // ioredis SET key value EX seconds NX → returns "OK" on success, null on conflict
+    const result = await (c as unknown as Record<string, (...args: unknown[]) => unknown>).set(
+      key, value, "EX", seconds, "NX",
+    );
+    return result !== null;
+  }
 }
 
 // ── High-level JSON store ────────────────────────────────────────────────
@@ -132,6 +165,10 @@ class JsonStoreImpl implements JsonStore {
 
   async setex<T>(key: string, seconds: number, value: T): Promise<void> {
     await this.kv.setex(this.k(key), seconds, JSON.stringify(value));
+  }
+
+  async setnx<T>(key: string, seconds: number, value: T): Promise<boolean> {
+    return this.kv.setnx(this.k(key), seconds, JSON.stringify(value));
   }
 }
 
